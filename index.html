@@ -27,7 +27,7 @@ const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const img = new Image(); img.src = IMG_SRC;
 let W=0,H=0,DPR=1,S=1;
 // tamaño real del lienzo en pantalla (no 100vh, que en móviles incluye la barra): la imagen no se estira
-function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=cv.clientWidth||innerWidth;H=cv.clientHeight||innerHeight;
+function resize(){DPR=Math.min(window.devicePixelRatio||1,1.75);W=cv.clientWidth||innerWidth;H=cv.clientHeight||innerHeight;
   cv.width=W*DPR;cv.height=H*DPR;S=Math.min(W,H)/1000;}
 addEventListener('resize',resize);addEventListener('orientationchange',()=>setTimeout(resize,200));
 if(window.visualViewport)visualViewport.addEventListener('resize',resize);resize();
@@ -182,8 +182,12 @@ function poly2(c,pts,fill){c.beginPath();c.moveTo(...pts[0]);for(let i=1;i<pts.l
   c.closePath();c.fillStyle=fill;c.fill();c.lineWidth=1.3;c.strokeStyle=INK;c.stroke();}
 function patternsFor(c){const mk=(gap,lw,dir)=>{const p=hatch(gap,lw,dir);return p;};return P;}
 let sectors=[], offs=[];
-function renderSectors(){
-  const sc=Math.min(1.6,S*DPR);
+let lastSc=0;
+function renderSectors(force){
+  // escala limitada: 4 lienzos gigantes agotaban la memoria gráfica de las tabletas
+  const sc=Math.min(1.1,S*DPR);
+  if(!force&&offs&&Math.abs(sc-lastSc)<.05)return; // sin cambio real de tamaño: no rehacer
+  lastSc=sc;
   offs=sectors.map(sec=>{
     const o=document.createElement('canvas');o.width=Math.ceil(2*EXT*sc);o.height=Math.ceil(EXT*sc);
     const c=o.getContext('2d');c.setTransform(sc,0,0,sc,EXT*sc,0);
@@ -386,7 +390,13 @@ document.getElementById('snd').onclick=e=>{
     e.target.textContent=muted?'Activar sonido':'Silenciar';
   }catch(err){e.target.textContent='Sonido no disponible';}
 };
-renderSectors();addEventListener('resize',renderSectors);
+renderSectors(true);
+let rsT=0;function rsLater(){clearTimeout(rsT);rsT=setTimeout(()=>renderSectors(false),300);}
+addEventListener('resize',rsLater);
+document.addEventListener('fullscreenchange',()=>{resize();rsLater();});
+document.addEventListener('webkitfullscreenchange',()=>{resize();rsLater();});
+// si el navegador libera la memoria del lienzo, se vuelve a dibujar todo
+cv.addEventListener('contextrestored',()=>{resize();renderSectors(true);});
 requestAnimationFrame(frame);
 </script>
 
