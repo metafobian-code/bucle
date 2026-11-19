@@ -29,7 +29,7 @@ No requiere instalación ni dependencias. Es HTML, CSS y JavaScript puro (Canvas
 
 ```
 index.html        Escena, animación y sonido
-assets/vela.jpg   Ilustración central (escala de grises)
+vela.jpg   Ilustración central (escala de grises)
 README.md
 ```
 

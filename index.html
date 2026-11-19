@@ -6,7 +6,7 @@
 <title>Relatividad de la vela</title>
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:Georgia,serif}
-  canvas{display:block;width:100vw;height:100vh}
+  canvas{display:block;position:fixed;top:0;left:0;width:100%;height:100%}
   #ui{position:fixed;left:16px;bottom:14px;display:flex;gap:12px;align-items:center;
       background:rgba(240,240,240,.92);color:#111;padding:8px 12px;border:1px solid #111;font-size:13px}
   #ui button{font:inherit;background:#111;color:#f0f0f0;border:0;padding:5px 10px;cursor:pointer}
@@ -22,13 +22,15 @@
   <label>Velocidad <input id="sp" type="range" min="0" max="3" step="0.05" value="1"></label>
 </div>
 <script>
-const IMG_SRC = "assets/vela.jpg";
+const IMG_SRC = "vela.jpg";
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
 const img = new Image(); img.src = IMG_SRC;
 let W=0,H=0,DPR=1,S=1;
-function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+// tamaño real del lienzo en pantalla (no 100vh, que en móviles incluye la barra): la imagen no se estira
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=cv.clientWidth||innerWidth;H=cv.clientHeight||innerHeight;
   cv.width=W*DPR;cv.height=H*DPR;S=Math.min(W,H)/1000;}
-addEventListener('resize',resize);resize();
+addEventListener('resize',resize);addEventListener('orientationchange',()=>setTimeout(resize,200));
+if(window.visualViewport)visualViewport.addEventListener('resize',resize);resize();
 
 const R=232;
 const PAPER='#f0f0f0', INK='#111111';
