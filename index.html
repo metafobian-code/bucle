@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Relatividad de la vela</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:Georgia,serif}
+  canvas{display:block;width:100vw;height:100vh}
+  #ui{position:fixed;left:16px;bottom:14px;display:flex;gap:12px;align-items:center;
+      background:rgba(240,240,240,.92);color:#111;padding:8px 12px;border:1px solid #111;font-size:13px}
+  #ui button{font:inherit;background:#111;color:#f0f0f0;border:0;padding:5px 10px;cursor:pointer}
+  #ui input{accent-color:#111}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <button id="pp">Pausa</button>
+  <button id="zm">Zoom: sí</button>
+  <button id="snd">Activar sonido</button>
+  <label>Velocidad <input id="sp" type="range" min="0" max="3" step="0.05" value="1"></label>
+</div>
+<script>
+const IMG_SRC = "assets/vela.jpg";
+const cv = document.getElementById('c'), ctx = cv.getContext('2d');
+const img = new Image(); img.src = IMG_SRC;
+let W=0,H=0,DPR=1,S=1;
+function resize(){DPR=Math.min(window.devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+  cv.width=W*DPR;cv.height=H*DPR;S=Math.min(W,H)/1000;}
+addEventListener('resize',resize);resize();
+
+const R=232;
+const PAPER='#f0f0f0', INK='#111111';
+// ---------- woodcut hatching patterns (oriented with the current transform) ----------
+function hatch(gap,lw,dir,bg=PAPER,fg=INK){
+  const n=gap*4, c=document.createElement('canvas'); c.width=c.height=n*4;
+  const g=c.getContext('2d'); g.scale(4,4); g.fillStyle=bg; g.fillRect(0,0,n,n);
+  g.strokeStyle=fg; g.lineWidth=lw; g.beginPath();
+  for(let k=-1;k<=4;k++){
+    const o=k*gap+gap/2;
+    if(dir==='h'){g.moveTo(0,o);g.lineTo(n,o);}
+    else if(dir==='v'){g.moveTo(o,0);g.lineTo(o,n);}
+    else {g.moveTo(o-n,n);g.lineTo(o,0);g.moveTo(o,n);g.lineTo(o+n,0);}
+  }
+  g.stroke();
+  const p=ctx.createPattern(c,'repeat'); p.setTransform(new DOMMatrix().scale(.25));
+  return p;
+}
+const P={
+  hL:hatch(7,.9,'h'), hM:hatch(4.5,1.5,'h'), hD:hatch(3,1.9,'h'),
+  vL:hatch(7,.9,'v'), vM:hatch(4.5,1.5,'v'), vD:hatch(3,2,'v'),
+  dM:hatch(5,1.4,'d'), dD:hatch(3,1.9,'d')
+};
+function poly(pts,fill,stroke=true,lw=1.6){
+  ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);
+  for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],pts[i][1]);
+  ctx.closePath(); if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.lineWidth=lw;ctx.strokeStyle=INK;ctx.stroke();}
+}
+const smooth=(a,b,x)=>{x=Math.min(1,Math.max(0,(x-a)/(b-a)));return x*x*(3-2*x);};
+
+// ---------- faceless mannequin figure: feet at (0,0), up = -y, facing +x ----------
+function figure(u,phase,alpha=1){
+  ctx.save(); ctx.globalAlpha*=alpha; ctx.lineCap='round'; ctx.lineJoin='round';
+  const sw=Math.sin(phase)*0.55, bob=Math.abs(Math.cos(phase))*0.08*u;
+  ctx.translate(0,-bob);
+  const hip=[0,-1.45*u], sh=[0.12*u,-2.55*u];
+  const limb=(o,a,len1,len2,bend,w)=>{
+    const k=[o[0]+Math.sin(a)*len1,o[1]+Math.cos(a)*len1];
+    const e=[k[0]+Math.sin(a+bend)*len2,k[1]+Math.cos(a+bend)*len2];
+    ctx.strokeStyle=INK;ctx.lineWidth=w;ctx.beginPath();ctx.moveTo(...o);ctx.lineTo(...k);ctx.lineTo(...e);ctx.stroke();
+    ctx.strokeStyle=PAPER;ctx.lineWidth=w*.28;ctx.beginPath();ctx.moveTo(o[0]-w*.18,o[1]);ctx.lineTo(k[0]-w*.18,k[1]);ctx.lineTo(e[0]-w*.18,e[1]);ctx.stroke();
+  };
+  // back limbs
+  limb(hip,-sw,0.75*u,0.72*u,Math.max(0,sw)*0.6+0.05,0.36*u);
+  limb([sh[0],sh[1]+.1*u],sw*.8,0.55*u,0.5*u,-0.35,0.26*u);
+  // torso
+  ctx.beginPath();
+  ctx.moveTo(hip[0]-.24*u,hip[1]+.05*u);ctx.lineTo(sh[0]-.3*u,sh[1]);
+  ctx.quadraticCurveTo(sh[0],sh[1]-.18*u,sh[0]+.3*u,sh[1]);
+  ctx.lineTo(hip[0]+.26*u,hip[1]+.05*u);ctx.closePath();
+  ctx.fillStyle=P.hM;ctx.fill();ctx.lineWidth=.07*u;ctx.strokeStyle=INK;ctx.stroke();
+  // head (faceless, egg-shaped)
+  ctx.beginPath();ctx.ellipse(sh[0]+.06*u,sh[1]-.42*u,.24*u,.3*u,.15,0,Math.PI*2);
+  ctx.fillStyle=P.dM;ctx.fill();ctx.stroke();
+  ctx.beginPath();ctx.ellipse(sh[0]-.02*u,sh[1]-.48*u,.08*u,.14*u,.15,0,Math.PI*2);ctx.fillStyle=PAPER;ctx.fill();
+  // front limbs
+  limb(hip,sw,0.75*u,0.72*u,Math.max(0,-sw)*0.6+0.05,0.38*u);
+  limb([sh[0],sh[1]+.1*u],-sw*.8,0.55*u,0.5*u,-0.35,0.28*u);
+  ctx.restore();
+}
+
+// ---------- staircase in profile, base at (0,0), rising to +x / -y ----------
+const OX=26, OY=-20; // depth recession
+function stair(n,w,h){
+  for(let i=0;i<n;i++){
+    const x=i*w, yt=-(i+1)*h, yb=-i*h;
+    poly([[x,yb],[x,yt],[x+OX,yt+OY],[x+OX,yb+OY]],P.vD);           // riser
+    poly([[x,yt],[x+w,yt],[x+w+OX,yt+OY],[x+OX,yt+OY]],P.hL);       // tread
+  }
+  const side=[[0,0]];
+  for(let i=0;i<n;i++){side.push([i*w,-(i+1)*h]);side.push([(i+1)*w,-(i+1)*h]);}
+  side.push([n*w,-n*h+h*1.6]);side.push([0,h*1.6]);
+  poly(side,P.dM,true,2);
+  // handrail
+  ctx.lineWidth=2.2;ctx.strokeStyle=INK;ctx.beginPath();
+  for(let i=0;i<=n;i+=2){const x=i*w+w*.5, y=-(Math.min(i,n-1)+1)*h;ctx.moveTo(x,y);ctx.lineTo(x,y-h*2.2);}
+  ctx.moveTo(w*.5,-h-h*2.2);ctx.lineTo((n-.5)*w,-n*h-h*2.2);
+  ctx.stroke();
+  ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(w*.5,-h-h*2.2);ctx.lineTo((n-.5)*w,-n*h-h*2.2);ctx.stroke();
+}
+// figures walking along a staircase: dir 1 up, -1 down
+function walkers(n,w,h,t,list){
+  for(const [off,dir,spd] of list){
+    let s=((t*spd*dir+off)%n+n)%n;
+    const fl=Math.floor(s), fr=s-fl;
+    const y=-h*(fl+1+smooth(.55,1,fr)), x=s*w+w*.3;
+    const a=Math.min(1,s/.7,(n-s)/.7);
+    ctx.save();ctx.translate(x,y); if(dir<0)ctx.scale(-1,1);
+    figure(h*1.05,s*Math.PI,a);ctx.restore();
+  }
+}
+function arch(x,y,wd,ht,fill){ // opening: bottom center x,y
+  ctx.beginPath();ctx.moveTo(x-wd/2,y);ctx.lineTo(x-wd/2,y-ht+wd/2);
+  ctx.arc(x,y-ht+wd/2,wd/2,Math.PI,0);ctx.lineTo(x+wd/2,y);ctx.closePath();
+  ctx.fillStyle=fill;ctx.fill();ctx.lineWidth=2.4;ctx.strokeStyle=INK;ctx.stroke();
+  // voussoir ring
+  ctx.beginPath();ctx.arc(x,y-ht+wd/2,wd/2+10,Math.PI,0);ctx.lineWidth=1.2;ctx.stroke();
+  for(let k=0;k<=8;k++){const a=Math.PI+k*Math.PI/8;ctx.moveTo(x+Math.cos(a)*wd/2,y-ht+wd/2+Math.sin(a)*wd/2);
+    ctx.lineTo(x+Math.cos(a)*(wd/2+10),y-ht+wd/2+Math.sin(a)*(wd/2+10));}
+  ctx.stroke();
+}
+
+// ---------- QR relief world ----------
+const M=34, DX=11, DY=-10;            // module size and extrusion offset
+const EXT=1320;                        // local extent of each sector
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const IMIN=-40,IMAX=40,JMAX=40;
+function inWedge(i,j){const x=(i+.5)*M,y=(j+.5)*M;return Math.abs(x)<y+2*M&&Math.hypot(x,y)>R-M;}
+function buildSector(seed){
+  const r=rng(seed), g=new Map(), lock=new Set(), st=new Set(), K=(i,j)=>i+','+j;
+  const set=(i,j,v,l)=>{g.set(K(i,j),v);if(l)lock.add(K(i,j));};
+  for(let j=0;j<=JMAX;j++)for(let i=IMIN;i<=IMAX;i++)if(inWedge(i,j))g.set(K(i,j),r()<.44?1:0);
+  // finder patterns
+  const finder=(i0,j0)=>{for(let a=-1;a<=7;a++)for(let b=-1;b<=7;b++){
+    const ring=Math.max(Math.abs(a-3),Math.abs(b-3));set(i0+a,j0+b,(ring===3||ring<=1)?1:0,true);}};
+  finder(-3,17); finder(-21,19); finder(14,19);
+  // staircases (diagonal module chains) with walkways
+  const paths=[];
+  for(let tries=0;tries<3000&&paths.length<10;tries++){
+    const dx=r()<.5?1:-1, L=3+Math.floor(r()*4), i0=Math.round((r()*2-1)*20), j0=10+Math.floor(r()*9);
+    const cells=[[i0-2*dx,j0],[i0-dx,j0],[i0,j0]];
+    for(let k=1;k<=L;k++)cells.push([i0+k*dx,j0-k]);
+    for(let k=1;k<=3;k++)cells.push([i0+(L+k)*dx,j0-L]);
+    const head=[];for(const[i,j]of cells){head.push([i,j-1],[i,j-2]);}
+    const all=[...cells,...head];
+    if(all.some(([i,j])=>j<1||!inWedge(i,j)||lock.has(K(i,j))||Math.hypot((i+.5)*M,(j+.5)*M)<R+60))continue;
+    if(cells.some(([i,j])=>Math.abs((i+.5)*M)>(j+.5)*M-M))continue;
+    for(const[i,j]of cells){set(i,j,1,true);st.add(K(i,j));}
+    for(const[i,j]of head)set(i,j,0,true);
+    paths.push(cells);
+  }
+  // modules that breathe in and out (the "data" moving)
+  const live=[];
+  for(const[k,v]of g){if(lock.has(k))continue;const[i,j]=k.split(',').map(Number);
+    const free=[[1,0],[0,-1],[1,-1],[-1,0],[0,1],[-1,1]].every(([a,b])=>!g.get(K(i+a,j+b)));
+    if(free&&r()<.6){live.push([i,j,r()*6.28,.4+r()*.8]);g.set(k,0);}}
+  return{g,paths,live,K,st};
+}
+function block(c,x,y,e,pat,stair){ // module at cell origin x,y; extrusion factor e
+  const ox=DX*e, oy=DY*e;
+  poly2(c,[[x,y],[x+M,y],[x+M+ox,y+oy],[x+ox,y+oy]],pat.hL);               // top
+  poly2(c,[[x+M,y],[x+M+ox,y+oy],[x+M+ox,y+M+oy],[x+M,y+M]],pat.dM);       // side
+  poly2(c,[[x,y],[x+M,y],[x+M,y+M],[x,y+M]],stair?pat.hM:pat.vD);                       // face
+  if(stair){c.lineWidth=3;c.beginPath();c.moveTo(x,y+1.5);c.lineTo(x+M,y+1.5);c.stroke();}
+}
+function poly2(c,pts,fill){c.beginPath();c.moveTo(...pts[0]);for(let i=1;i<pts.length;i++)c.lineTo(...pts[i]);
+  c.closePath();c.fillStyle=fill;c.fill();c.lineWidth=1.3;c.strokeStyle=INK;c.stroke();}
+function patternsFor(c){const mk=(gap,lw,dir)=>{const p=hatch(gap,lw,dir);return p;};return P;}
+let sectors=[], offs=[];
+function renderSectors(){
+  const sc=Math.min(1.6,S*DPR);
+  offs=sectors.map(sec=>{
+    const o=document.createElement('canvas');o.width=Math.ceil(2*EXT*sc);o.height=Math.ceil(EXT*sc);
+    const c=o.getContext('2d');c.setTransform(sc,0,0,sc,EXT*sc,0);
+    c.fillStyle=P.vL;c.fillRect(-EXT,0,2*EXT,EXT);
+    c.strokeStyle='rgba(22,19,15,.25)';c.lineWidth=.8;c.beginPath();
+    for(let x=-EXT;x<=EXT;x+=M){c.moveTo(x,0);c.lineTo(x,EXT);}for(let y=0;y<=EXT;y+=M){c.moveTo(-EXT,y);c.lineTo(EXT,y);}c.stroke();
+    for(let j=JMAX;j>=0;j--)for(let i=IMIN;i<=IMAX;i++)if(sec.g.get(sec.K(i,j)))block(c,i*M,j*M,1,P,sec.st.has(sec.K(i,j)));
+    return o;});
+}
+sectors=[11,29,47,83].map(buildSector);
+// walker along a path of module tops (ping-pong)
+function pathPos(cells,s){
+  const n=cells.length-1, k=Math.min(n-1,Math.floor(s)), f=s-k;
+  const[a,b]=[cells[k],cells[k+1]];
+  const up=b[1]<a[1], dn=b[1]>a[1];
+  let yy=a[1]*M; if(up)yy-=M*smooth(.35,.75,f); if(dn)yy+=M*smooth(.25,.65,f);
+  return[((a[0]+(b[0]-a[0])*f)+.5)*M+DX*.5, yy+DY*.5];
+}
+function sectorLive(t,k){
+  const sec=sectors[k];
+  for(const[i,j,ph,sp]of sec.live){const e=Math.max(0,Math.sin(t*sp+ph));if(e>.03)block(ctx,i*M,j*M,e,P);}
+  sec.paths.forEach((cells,p)=>{
+    const n=cells.length-1;
+    for(let w=0;w<(n>8?2:1);w++){
+      const sp=.55+(p%3)*.12, raw=t*sp+p*2.3+w*n*.9, cyc=raw%(2*n), s=cyc<n?cyc:2*n-cyc, dir=cyc<n?1:-1;
+      const[x,y]=pathPos(cells,Math.min(n-1e-3,s));
+      const fwd=(cells[n][0]-cells[0][0])*dir>0;
+      ctx.save();ctx.translate(x,y);if(!fwd)ctx.scale(-1,1);figure(M*.72,s*Math.PI*1.5);ctx.restore();
+    }
+  });
+}
+
+// ---------- portal: stone ring + the illustration ----------
+function portal(t,rot,abs){
+  ctx.save();ctx.rotate(-rot*1.6);
+  const n=30;
+  for(let i=0;i<n;i++){
+    const a0=i/n*Math.PI*2, a1=(i+1)/n*Math.PI*2;
+    ctx.beginPath();ctx.arc(0,0,R+34,a0,a1);ctx.arc(0,0,R,a1,a0,true);ctx.closePath();
+    ctx.fillStyle=i%2?P.dM:P.hL;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle=INK;ctx.stroke();
+  }
+  ctx.restore();
+  ctx.beginPath();ctx.arc(0,0,R+38,0,Math.PI*2);ctx.lineWidth=3;ctx.stroke();
+  ctx.save();ctx.beginPath();ctx.arc(0,0,R,0,Math.PI*2);ctx.clip();
+  ctx.fillStyle='#111';ctx.fillRect(-R,-R,2*R,2*R);
+  if(img.complete)ctx.imageSmoothingQuality='high';ctx.drawImage(img,-R*1.025,-R*1.025,R*2.05,R*2.05);
+  // candle breathing
+  const fl=.55+.25*Math.sin(t*7.1)+.15*Math.sin(t*13.3+1)+.1*Math.sin(t*3.1);
+  const g=ctx.createRadialGradient(PX,PY-20,2,PX,PY-20,R*.55);
+  g.addColorStop(0,`rgba(255,255,255,${.22*fl})`);g.addColorStop(.4,`rgba(255,255,255,${.07*fl})`);g.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.globalCompositeOperation='lighter';ctx.fillStyle=g;ctx.fillRect(-R,-R,2*R,2*R);
+  // twinkling stars in the sky band
+  for(let i=0;i<26;i++){
+    const sx=Math.sin(i*91.7)*R*.62, sy=-R*.93+Math.abs(Math.sin(i*37.3))*R*.22;
+    const tw=Math.max(0,Math.sin(t*(1.3+i%5*.4)+i*2.1));
+    ctx.fillStyle=`rgba(255,255,255,${tw*.9})`;ctx.fillRect(sx,sy,2.4,2.4);
+  }
+  ctx.globalCompositeOperation='source-over';
+  ctx.restore();
+}
+const PX=-7, PY=42, WIN=9;   // flame centre = the Droste window
+function vflame(t,a){
+  if(a<=0)return;
+  const sw=Math.sin(t*2.3)*4+Math.sin(t*5.7)*1.5, hh=1+.06*Math.sin(t*9)+.04*Math.sin(t*14.3);
+  const base=PY+34, tip=PY-62*hh;
+  ctx.save();ctx.globalAlpha=a;
+  const g=ctx.createRadialGradient(PX,PY,2,PX,PY,90);
+  g.addColorStop(0,'rgba(255,200,90,.55)');g.addColorStop(1,'rgba(255,120,30,0)');
+  ctx.fillStyle=g;ctx.fillRect(PX-120,PY-140,240,260);
+  const shape=(wd,tp,col)=>{ctx.beginPath();ctx.moveTo(PX,base);
+    ctx.bezierCurveTo(PX-wd,base-10,PX-wd*.9,PY-10,PX+sw,tp);
+    ctx.bezierCurveTo(PX+wd*.9,PY-10,PX+wd,base-10,PX,base);ctx.fillStyle=col;ctx.fill();};
+  shape(26,tip,'#ff7a1a');shape(20,tip+10,'#ffb238');shape(14,tip+24,'#ffe27a');shape(8,PY-12,'#fff6d8');
+  ctx.restore();
+}
+
+// ---------- loop ----------
+let t=0,tz=0,last=performance.now(),paused=false,speed=1,zoomOn=true;
+document.getElementById('pp').onclick=e=>{paused=!paused;e.target.textContent=paused?'Seguir':'Pausa';};
+document.getElementById('zm').onclick=e=>{zoomOn=!zoomOn;e.target.textContent='Zoom: '+(zoomOn?'sí':'no');};
+document.getElementById('sp').oninput=e=>speed=+e.target.value;
+const TZ=44; // seconds per dive
+let K=60, CORNER=1000;
+
+function sectorVector(k,lx,ly,rr){
+  const sec=sectors[k];
+  const x0=Math.max(-EXT,lx-rr),x1=Math.min(EXT,lx+rr),y0=Math.max(0,ly-rr),y1=Math.min(EXT,ly+rr);
+  if(x1<=x0||y1<=y0)return;
+  ctx.fillStyle=P.vL;ctx.fillRect(x0,y0,x1-x0,y1-y0);
+  ctx.strokeStyle='rgba(22,19,15,.25)';ctx.lineWidth=.8;ctx.beginPath();
+  for(let x=Math.floor(x0/M)*M;x<=x1;x+=M){ctx.moveTo(x,y0);ctx.lineTo(x,y1);}
+  for(let y=Math.floor(y0/M)*M;y<=y1;y+=M){ctx.moveTo(x0,y);ctx.lineTo(x1,y);}ctx.stroke();
+  const i0=Math.max(IMIN,Math.floor(x0/M)-1),i1=Math.min(IMAX,Math.ceil(x1/M)+1);
+  const j0=Math.max(0,Math.floor(y0/M)-1),j1=Math.min(JMAX,Math.ceil(y1/M)+1);
+  for(let j=j1;j>=j0;j--)for(let i=i0;i<=i1;i++)if(sec.g.get(sec.K(i,j)))block(ctx,i*M,j*M,1,P,sec.st.has(sec.K(i,j)));
+}
+function world(abs,rot,cx,cy,rr){
+  ctx.save();ctx.rotate(rot);
+  for(let k=0;k<4;k++){
+    const ph=rot+k*Math.PI/2, lx=cx*Math.cos(ph)+cy*Math.sin(ph), ly=-cx*Math.sin(ph)+cy*Math.cos(ph);
+    ctx.save();ctx.rotate(k*Math.PI/2);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,4000,Math.PI/4,Math.PI*3/4);ctx.closePath();ctx.clip();
+    if(abs>1.25)sectorVector(k,lx,ly,rr);else ctx.drawImage(offs[k],-EXT,0,2*EXT,EXT);
+    sectorLive(t+k*3.1,k);
+    ctx.restore();
+  }
+  ctx.lineWidth=6;ctx.strokeStyle=INK;
+  for(let k=0;k<4;k++){const a=k*Math.PI/2+Math.PI/4;ctx.beginPath();ctx.moveTo(Math.cos(a)*R,Math.sin(a)*R);ctx.lineTo(Math.cos(a)*4000,Math.sin(a)*4000);ctx.stroke();}
+  ctx.restore();
+}
+// one level of the infinite scene; current transform already maps this level's units
+function drawLevel(abs,depth,rot){
+  const cx=PX*(1-1/abs), cy=PY*(1-1/abs), rr=CORNER/abs;          // visible circle in level units
+  const insideWin=Math.hypot(cx-PX,cy-PY)+rr<WIN*.97;
+  if(!insideWin){
+    if(Math.hypot(cx,cy)+rr>R) world(abs,rot,cx,cy,rr);
+    portal(t,rot,abs);
+  }
+  if(depth<3 && WIN*abs*S>1.2){
+    ctx.save();ctx.beginPath();ctx.arc(PX,PY,WIN,0,Math.PI*2);ctx.clip();
+    ctx.fillStyle=PAPER;ctx.fillRect(PX-WIN,PY-WIN,2*WIN,2*WIN);
+    ctx.translate(PX,PY);ctx.scale(1/K,1/K);ctx.translate(-PX,-PY);
+    drawLevel(abs/K,depth+1,rot);
+    ctx.restore();
+    if(!insideWin){ // burning rim of the window
+      ctx.save();ctx.beginPath();ctx.arc(PX,PY,WIN,0,Math.PI*2);
+      ctx.lineWidth=Math.max(1,2.2/abs);ctx.strokeStyle='rgba(255,255,255,.95)';
+      ctx.shadowColor='rgba(255,255,255,1)';ctx.shadowBlur=14;ctx.stroke();ctx.restore();
+    }
+  }
+}
+let zphase=0;
+function frame(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  if(!paused){t+=dt*speed; if(zoomOn)tz+=dt*speed;}
+  CORNER=Math.hypot(W,H)/2/S+40; K=(CORNER+Math.hypot(PX,PY))/WIN;
+  zphase=(tz/TZ)%1; const z=Math.pow(K,zphase);
+  ctx.setTransform(DPR,0,0,DPR,0,0);ctx.fillStyle=PAPER;ctx.fillRect(0,0,W,H);
+  ctx.translate(W/2,H/2);ctx.scale(S,S);
+  ctx.translate(PX,PY);ctx.scale(z,z);ctx.translate(-PX,-PY);
+  const rot=t*0.03 + Math.sin(t*.19)*.05;
+  drawLevel(z,0,rot);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  const v=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.35,W/2,H/2,Math.hypot(W,H)*.6);
+  v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.7)');ctx.fillStyle=v;ctx.fillRect(0,0,W,H);
+  audioTick(dt);
+  requestAnimationFrame(frame);
+}
+
+// ---------- sound (synthesised, starts on click) ----------
+let AC=null,master,windG,windF,noiseBuf,stepClock=0,muted=false;
+function mkNoise(sec,brown){const b=AC.createBuffer(1,AC.sampleRate*sec,AC.sampleRate),d=b.getChannelData(0);let l=0;
+  for(let i=0;i<d.length;i++){const w=Math.random()*2-1;if(brown){l=(l+.02*w)/1.02;d[i]=l*3.5;}else d[i]=w;}return b;}
+function startAudio(){
+  AC=new (window.AudioContext||window.webkitAudioContext)();
+  master=AC.createGain();master.gain.value=.7;master.connect(AC.destination);
+  noiseBuf=mkNoise(2,false);
+  // city hum
+  const hum=AC.createBufferSource();hum.buffer=mkNoise(4,true);hum.loop=true;
+  const hl=AC.createBiquadFilter();hl.type='lowpass';hl.frequency.value=220;
+  const hg=AC.createGain();hg.gain.value=.35;hum.connect(hl).connect(hg).connect(master);hum.start();
+  for(const[f,ty,gv]of[[55,'sine',.05],[82.4,'triangle',.025],[110.5,'sine',.012]]){
+    const o=AC.createOscillator();o.type=ty;o.frequency.value=f;const g=AC.createGain();g.gain.value=gv;
+    const lfo=AC.createOscillator();lfo.frequency.value=.05+Math.random()*.06;const lg=AC.createGain();lg.gain.value=gv*.6;
+    lfo.connect(lg).connect(g.gain);o.connect(g).connect(master);o.start();lfo.start();}
+  // wind / whoosh through the flame
+  const wn=AC.createBufferSource();wn.buffer=noiseBuf;wn.loop=true;
+  windF=AC.createBiquadFilter();windF.type='bandpass';windF.Q.value=1.1;windF.frequency.value=400;
+  windG=AC.createGain();windG.gain.value=0;wn.connect(windF).connect(windG).connect(master);wn.start();
+}
+function burst(dur,ftype,freq,gain,pan){
+  const src=AC.createBufferSource();src.buffer=noiseBuf;
+  const f=AC.createBiquadFilter();f.type=ftype;f.frequency.value=freq;
+  const g=AC.createGain(),now=AC.currentTime;g.gain.setValueAtTime(gain,now);g.gain.exponentialRampToValueAtTime(.0001,now+dur);
+  const p=AC.createStereoPanner();p.pan.value=pan;
+  src.connect(f).connect(g).connect(p).connect(master);src.start(now,Math.random()*1.5,dur+.02);
+}
+function thump(gain,pan){
+  const o=AC.createOscillator();o.frequency.setValueAtTime(95,AC.currentTime);o.frequency.exponentialRampToValueAtTime(45,AC.currentTime+.09);
+  const g=AC.createGain();g.gain.setValueAtTime(gain,AC.currentTime);g.gain.exponentialRampToValueAtTime(.0001,AC.currentTime+.12);
+  const p=AC.createStereoPanner();p.pan.value=pan;o.connect(g).connect(p).connect(master);o.start();o.stop(AC.currentTime+.14);
+}
+function audioTick(dt){
+  if(!AC||muted)return;
+  const near=smooth(.62,.98,zphase)*(zoomOn?1:0);           // how deep inside the flame
+  windF.frequency.setTargetAtTime(260+2600*near,AC.currentTime,.1);
+  windG.gain.setTargetAtTime(paused?0:.02+.28*near*near,AC.currentTime,.15);
+  if(paused)return;
+  // candle crackle
+  if(Math.random()<(.06+.6*near)*speed) burst(.008+Math.random()*.03,'highpass',1800+Math.random()*3000,.08+.25*Math.random()*(.4+near),Math.random()*1.4-.7);
+  // footsteps of the walkers
+  stepClock-=dt*speed;
+  if(stepClock<=0){stepClock=.38+Math.random()*.25;const pan=Math.random()*1.6-.8,gv=.05+.07*Math.random()*(1-near*.7);
+    burst(.07,'lowpass',520,gv*1.6,pan);thump(gv,pan);}
+}
+document.getElementById('snd').onclick=e=>{
+  try{ if(!AC){startAudio();e.target.textContent='Silenciar';return;}
+    muted=!muted;master.gain.setTargetAtTime(muted?0:.7,AC.currentTime,.1);
+    if(!muted&&AC.state==='suspended')AC.resume();
+    e.target.textContent=muted?'Activar sonido':'Silenciar';
+  }catch(err){e.target.textContent='Sonido no disponible';}
+};
+renderSectors();addEventListener('resize',renderSectors);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
